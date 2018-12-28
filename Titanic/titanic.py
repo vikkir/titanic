@@ -1,76 +1,184 @@
-#Created 28/9/18 by Vikki Richardson
-#importing libraries for dealing with json, dataframes and the twitter api
-#also imports personal credentials for twitter authorisation (kept seperately for security)
+#Created 28/12/18 by Vikki Richardson
+#importing libraries for dealing with csv and pandas
 
-import tweepy
-import json
 import pandas as pd
-from credentials import *
-import datetime
+import csv
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set(style='white')
+sns.set(style='whitegrid',color_codes=True)
 
 ###################################################
 
-#SET UP THE TWITTER AUTHENTICATION
-auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
-auth.set_access_token(access_token, access_token_secret)
+#BRING IN THE TEST FILE
+#creates a dataframe with the training info
+titanicDF = pd.read_csv('train.csv', index_col = "PassengerId")
 
-#creates an instance of tweepy api that automatically waits whenever we reach the rate limit 
-api = tweepy.API(auth, parser=tweepy.parsers.JSONParser(),wait_on_rate_limit='true',wait_on_rate_limit_notify='true')
+#####FUNCTIONS#####################################
 
-###################################################
+def ageDefine(x):
+    if x['Age'] < 16: 
+        return 'Child'
+    elif x['Age'] <= 50:
+        return 'Adult'
+    elif x['Age'] > 50:
+        return 'Elderly'
 
-#BRING IN THE JSON FILE
-#creates a dataframe with the json information produced in the previous section giving the scraped twitter handles
-charityDF = pd.read_json('data_with_twitter_handles.json', orient ='index')
-
-###################################################
-
-#FUNCTION
-#find the given twitter user and get their followers, follwing and number of tweets information
-def try_get_user(s):
-    print(s['Twitter Handle'])
-    if s['Twitter Handle'] == '.':
-        print('There was no handle')
-        print('********************')
-        s['Twitter followers'] = '.'
-        s['Twitter following'] = '.'
-        s['Number of tweets in total'] = 0
-        return(s)    
+def hasFamily(x):
+    if x['Parch'] == 0 & x['SibSp'] == 0:
+        return 'Alone'
     else:
-        try:
-            actualUserName = api.get_user(screen_name=s['Twitter Handle']) 
-            print(actualUserName["followers_count"],actualUserName["friends_count"],actualUserName["statuses_count"]) 
-            print('********************')
-            s['Twitter followers'] = actualUserName["followers_count"]
-            s['Twitter following'] = actualUserName["friends_count"]
-            s['Number of tweets in total'] = actualUserName["statuses_count"]
-            return(s)            
-        except tweepy.TweepError as e:
-            print(e)
-            print('There was a failure')
-            print('********************')
-            s['Twitter followers'] = '.'
-            s['Twitter following'] = '.'
-            s['Number of tweets in total'] = 0
-            return(s)              
+        return 'Travelling with Family'
 
-###############################################
+####DESCRIBE THE DATA  ################################
 
-#MAIN
-#creates a column to dictate whether there is a twitter handle or not
-charityDF['Has Twitter'] = charityDF['Twitter Handle'].apply(lambda x: x != '.')            
+#find missing values
+print(titanicDF.isnull().sum())
+#age has a lot of missing values so try to fill those in
 
-#CALL TO DEFINED FUNCTION
-#find the twittter user and assign the followers, following and number of tweets in total to the relevant columns
-charityDF = charityDF.apply(try_get_user, axis = 1)
+#get the average age
+meanAge = titanicDF['Age'].mean()
+print(meanAge)
 
-#WRANGLE
-#wrangle of data to remove placeholders and make the analysis easier
-twitterDataDF = twitterDataDF.replace('.', np.nan)
+#find all the entries with no age whose name indicates they are children and make them 10 years old
+titanicDF.loc[titanicDF['Age'].isnull() & (titanicDF['Name'].str.contains('Miss') | titanicDF['Name'].str.contains('Master')), 'Age'] = 10
+#now find all others with no age and make them the average age
+titanicDF.loc[titanicDF['Age'].isnull(), 'Age'] = meanAge
 
-#SAVE THE DATA
-#export the dataframe to json for further use
-charityDF.to_json('twitter_data_cleaned.json', orient='index')
+#check the missing values now
+print(titanicDF.isnull().sum())
 
-################################################
+#####GENDER VISUALISATIONS################
+
+#bar chart for gender on the titanic
+genderBarChart = sns.countplot(x='Sex', data=titanicDF)
+plt.title('Gender of Passengers on Board')
+plt.xlabel('Gender')
+plt.ylabel('Count')
+genderFig = genderBarChart.get_figure()
+genderFig.savefig("GenderBarChart.png")
+plt.show()
+plt.close()
+
+#bar chart for survivors by gender on the titanic
+survivorGenderBarChart = sns.countplot(x='Survived', data=titanicDF, hue='Sex')
+survivorGenderBarChart.set(xticklabels=['No','Yes'])
+plt.title("Survived By Gender")
+plt.xlabel("Survived")
+survivorGenderFig = survivorGenderBarChart.get_figure()
+survivorGenderFig.savefig("SurvivorGenderBarChart.png")
+plt.show()
+plt.close()
+
+######AGE VISUALISATIONS####################
+
+#create age category to seperate into child, adult and elderly
+titanicDF['AgeCategory'] = titanicDF.apply(ageDefine, axis=1)
+
+#bar chart for passengers on board by age
+ageBarChart = sns.countplot(x='AgeCategory', data=titanicDF)
+plt.title("Age category of passengers")
+plt.xlabel('Age Category')
+plt.ylabel("Count")
+ageFig = ageBarChart.get_figure()
+ageFig.savefig("AgeBarChart.png")
+plt.show()
+plt.close()
+
+
+#bar chart for survivors by age
+survivorAgeBarChart = sns.countplot(x='Survived', data=titanicDF, hue='AgeCategory')
+survivorAgeBarChart.set(xticklabels=['No','Yes'])
+plt.title("Survived By Age")
+plt.xlabel("Survived")
+survivorAge = survivorAgeBarChart.get_figure()
+survivorAge.savefig("SurvivorAgeBarChart.png")
+plt.show()
+plt.close()
+
+#box plot for actual age to check for outliers
+ageBoxPlot = sns.boxplot(x=titanicDF['Age'], data=titanicDF)
+plt.title("Age")
+plt.xlabel('Age')
+ageBoxFig = ageBoxPlot.get_figure()
+ageBoxFig.savefig("AgeBoxPlot.png")
+plt.show()
+plt.close()
+
+#histogram to check for normal distribution
+ageHist = sns.distplot(titanicDF['Age'])
+plt.title("Age of Passengers")
+plt.xlabel("Age")
+plt.ylabel("Frequency")
+agefig = ageHist.get_figure()
+agefig.savefig("AgeHistogram.png")
+plt.show()
+plt.close()
+
+#####RELATIVES INFORMATION#########
+
+titanicDF['Alone'] = titanicDF.apply(hasFamily, axis=1)
+
+aloneBarChart = sns.countplot(x='Alone', data=titanicDF)
+plt.title("Passengers Travelling with Family or Alone")
+#plt.xlabel('Relatives')
+plt.ylabel("Count")
+#parchFig = parchBarChart.get_figure()
+#parchFig.savefig("AgeBarChart.png")
+plt.show()
+plt.close()
+
+survivorAloneBarChart = sns.countplot(x='Survived', data=titanicDF, hue="Alone")
+plt.title("Passengers Travelling with Family or Alone")
+#plt.xlabel('Relatives')
+plt.ylabel("Count")
+#parchFig = parchBarChart.get_figure()
+#parchFig.savefig("AgeBarChart.png")
+plt.show()
+plt.close()
+
+##########CLASS INFORMATION#########
+
+classBarChart = sns.countplot(x='Pclass', data=titanicDF)
+plt.title("Passengers By Class of Cabin")
+plt.xlabel('Class of Passengers')
+plt.ylabel("Count")
+#parchFig = parchBarChart.get_figure()
+#parchFig.savefig("AgeBarChart.png")
+plt.show()
+plt.close()
+
+survivorClassBarChart = sns.countplot(x='Survived', data=titanicDF, hue="Pclass")
+plt.title("Survivors by Class")
+#plt.xlabel('Relatives')
+plt.ylabel("Count")
+#parchFig = parchBarChart.get_figure()
+#parchFig.savefig("AgeBarChart.png")
+plt.show()
+plt.close()
+
+#histogram to check for normal distribution
+fareHist = sns.distplot(titanicDF['Fare'])
+plt.title("Fare paid")
+plt.xlabel("Fare")
+plt.ylabel("Frequency")
+#agefig = ageHist.get_figure()
+#agefig.savefig("AgeHistogram.png")
+plt.show()
+plt.close()
+
+corr = titanicDF.corr()
+cmap = sns.diverging_palette(220, 10, as_cmap=True)
+mask = np.zeros_like(corr, dtype=np.bool)
+mask[np.triu_indices_from(mask)] = True
+#labels = ['PropGenFunding','PropGovtFunding','NoOfTweets']
+sns.heatmap(corr, mask=mask,cmap=cmap, vmax=.3,linewidths=.5)
+plt.rcParams["axes.labelsize"] = 6
+plt.title('Diagonal correlation matrix for Final Data Set',fontsize=10)
+ax = plt.gca()
+#ax.set_xticklabels(labels)
+#ax.set_yticklabels(labels)
+plt.tight_layout()
+plt.show()
+plt.close()
